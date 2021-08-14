@@ -1,0 +1,294 @@
+#include <asf.h>
+#include <stdio.h>
+
+
+
+static int uart0_tx(char c, FILE *stream);
+static void uart0_rx(FILE *stream);
+
+/* When you use ANCI-C key input API... */
+static FILE mystdio = FDEV_SETUP_STREAM(uart0_tx, uart0_rx, _FDEV_SETUP_RW);
+
+
+
+volatile uint8_t *pDDRC = 0x27;
+volatile uint8_t *pDDRD = 0x2A;
+volatile uint8_t *pDDRE = 0x2D;
+
+volatile uint8_t *pPORTC = 0x28;
+volatile uint8_t *pPORTD = 0x2B;
+volatile uint8_t *pPORTE = 0x2E;
+
+
+
+static int uart0_tx(char c, FILE *stream)
+{
+	if(c == '\n')
+	{
+		while((UCSR0A & (1 << UDRE0)) == 0);
+		UDR0 = 0x0D;	// carriage return
+	}
+
+	while((UCSR0A & (1 << UDRE0)) == 0);
+	UDR0 = c;
+
+
+	return 0;
+}
+
+
+
+
+static void uart0_rx(FILE *stream)
+{
+	char data;
+
+	while (!(UCSR0A & (1 << RXC0)));
+
+	data = UDR0;
+}
+
+
+
+
+void USART0_Printf_Init(uint32_t baudrate)
+{
+	float f_value;
+	uint32_t ubr_reg;
+
+	sysclk_enable_peripheral_clock(&UCSR0A);
+
+	/* [Caution] Set baud rate : Expression BOARD_CLOCK / (16 * baudrate) - 1 may cause data crack. */
+	f_value = ((float)BOARD_EXTERNAL_CLK / (16. * baudrate) - 1.);
+
+	ubr_reg = (uint32_t)f_value;
+	if(f_value - ubr_reg > 0.5)
+	ubr_reg++;
+
+	UCSR0A = 0;
+	UCSR0B = 0;
+
+	/* Set frame format: 8data, 1stop bit */
+	UCSR0C = (0 << USBS0) | (3 << UCSZ00);
+
+	UBRR0H = (unsigned char)((ubr_reg >> 8) & 0xFF);
+	UBRR0L = (unsigned char)(ubr_reg & 0xFF);
+
+	/* Enable receiver and transmitter #1. */
+	UCSR0B = (1 << RXEN0) | (1 << TXEN0);
+
+	// Assign device(mystdio) to stdout & stdin.
+	stdout = stdin = &mystdio;
+
+	delay_ms(10);
+}
+
+
+static void PCINT_Config(void)
+{
+	PCICR = 1 << PCIE0;
+	/* Set mask of PB7(Pushbutton) */
+	PCMSK0 = 1 << PCINT7;
+}
+
+
+static volatile uint8_t s_button_count = 0;
+
+ISR(PCINT0_vect)
+{
+
+	if((PINB & (1 << 7)) == 0)
+	{
+		//ioport_set_value(LED0, 1);
+		
+		s_button_count++;		
+		
+		if(s_button_count == 100)
+		{
+			s_button_count = 0;
+		}	
+		
+		
+		
+		printf("s_button_count = %d\n", s_button_count);
+	}
+
+}
+
+
+static void seg_ctrl_dig10(uint8_t value)
+{
+	if (value == 1)
+	{
+		*pPORTC = 0x04;
+		*pPORTD = 0x80;
+		*pPORTE = 0x00;
+	}
+	else if(value == 2)
+	{
+		*pPORTC = 0x03;
+		*pPORTD = 0x80;
+		*pPORTE = 0x03;
+	}
+	else if(value == 3)
+	{
+		*pPORTC = 0x06;
+		*pPORTD = 0x80;
+		*pPORTE = 0x03;
+	}
+	else if(value == 4)
+	{
+		*pPORTC = 0x04;
+		*pPORTD = 0x80;
+		*pPORTE = 0x06;
+	}
+	else if(value == 5)
+	{
+		*pPORTC = 0x06;
+		*pPORTD = 0x00;
+		*pPORTE = 0x07;
+	}
+	else if(value == 6)
+	{
+		*pPORTC = 0x07;
+		*pPORTD = 0x00;
+		*pPORTE = 0x07;
+	}
+	else if(value == 7)
+	{
+		*pPORTC = 0x04;
+		*pPORTD = 0x80;
+		*pPORTE = 0x05;
+	}
+	else if(value == 8)
+	{
+		*pPORTC = 0x07;
+		*pPORTD = 0x80;
+		*pPORTE = 0x07;
+	}
+	else if(value == 9)
+	{
+		*pPORTC = 0x06;
+		*pPORTD = 0x80;
+		*pPORTE = 0x07;
+	}
+}
+
+
+
+static void seg_ctrl_dig1(uint8_t value)
+{
+	if (value == 0)
+	{
+		*pPORTC = 0x30;
+		*pPORTD = 0x78;
+		*pPORTE = 0x00;
+	}
+	else if(value == 1)
+	{
+		*pPORTC = 0x00;
+		*pPORTD = 0x18;
+		*pPORTE = 0x00;
+	}
+	else if(value == 2)
+	{
+		*pPORTC = 0x30;
+		*pPORTD = 0x34;
+		*pPORTE = 0x00;
+	}
+	else if(value == 3)
+	{
+		*pPORTC = 0x20;
+		*pPORTD = 0x3C;
+		*pPORTE = 0x00;
+	}
+	else if(value == 4)
+	{
+		*pPORTC = 0x00;
+		*pPORTD = 0x5C;
+		*pPORTE = 0x00;
+	}
+	else if(value == 5)
+	{
+		*pPORTC = 0x20;
+		*pPORTD = 0x6C;
+		*pPORTE = 0x00;
+	}
+	else if(value == 6)
+	{
+		*pPORTC = 0x30;
+		*pPORTD = 0x6C;
+		*pPORTE = 0x00;
+	}
+	else if(value == 7)
+	{
+		*pPORTC = 0x00;
+		*pPORTD = 0x78;
+		*pPORTE = 0x00;
+	}
+	else if(value == 8)
+	{
+		*pPORTC = 0x30;
+		*pPORTD = 0x7C;
+		*pPORTE = 0x00;
+	}
+	else if(value == 9)
+	{
+		*pPORTC = 0x20;
+		*pPORTD = 0x7C;
+		*pPORTE = 0x00;
+	}
+	
+}
+
+
+
+static void Display_Segment(uint8_t digit_10, uint8_t digit_1)
+{
+	if(digit_10 == 0)
+	{
+		seg_ctrl_dig1(digit_1);
+	}
+	else
+	{
+		seg_ctrl_dig10(digit_10);
+		seg_ctrl_dig1(digit_1);		
+	}
+}
+
+
+int main(void)
+{
+	uint32_t baudrate = 115200;
+	
+	
+
+	/* Insert system clock initialization code here. */
+	sysclk_init();
+	board_init();
+
+	USART0_Printf_Init(baudrate);
+
+	*pDDRC = 0x3F;
+	*pDDRD = 0xFC;
+	*pDDRE = 0x07;
+
+	/* Pin change interrupt configuration */
+	PCINT_Config();
+
+	/* Set Global Interrupt Enable */
+	sei();
+	uint8_t digit_10;
+	uint8_t digit_1;
+	
+	while(1)
+	{
+		digit_10 = s_button_count / 10;
+		digit_1 = s_button_count % 10;
+
+		Display_Segment(digit_10, digit_1);
+		
+
+	}
+}
+	
